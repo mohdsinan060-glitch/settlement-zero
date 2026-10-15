@@ -56,6 +56,30 @@ export interface SettlementState {
   constructedProjects: string[]; // IDs of built projects
   settlementEstablished: boolean;
 
+  // Phase 7+: Seeded Simulation, Interconnected Resources & Rover Expeditions
+  expeditionSeed: string;
+  constructionMaterials: number; // Construction materials reserve
+  activeEvent: {
+    id: string;
+    title: string;
+    description: string;
+    hazardLevel: 'LOW' | 'MODERATE' | 'SEVERE';
+    choices: {
+      label: string;
+      effectText: string;
+      actionType: 'divert_shields' | 'maintain_pumps' | 'seal_arrays' | 'salvage_scrap' | 'bypass_vent' | 'seal_fault';
+    }[];
+  } | null;
+  eventLog: string[];
+  activeRovers: {
+    id: string;
+    targetId: string;
+    targetName: string;
+    progress: number; // 0 - 100%
+    status: 'TRANSIT' | 'SCANNING' | 'RETURNED';
+    yieldSummary: string;
+  }[];
+
   // Actions
   setMascotMood: (mood: MascotMood) => void;
   openDialogue: (customText?: string) => void;
@@ -74,6 +98,14 @@ export interface SettlementState {
   buildProject: (id: string) => void;
   claimSettlementEstablished: () => void;
   resetSimulation: () => void;
+
+  // Seeded simulation & interconnected mechanics actions
+  initSeededExpedition: (seed: string) => void;
+  triggerRandomEvent: () => void;
+  resolveEventChoice: (actionType: string) => void;
+  dismissEvent: () => void;
+  dispatchRoverMission: (targetId: string) => boolean;
+  tickRoverProgress: () => void;
 }
 
 const INITIAL_DISCOVERIES: Discovery[] = [
@@ -155,6 +187,12 @@ export const useSettlementStore = create<SettlementState>((set) => ({
   simulationPaused: false,
   constructedProjects: [],
   settlementEstablished: false,
+
+  expeditionSeed: 'EXP-PROXIMA-01',
+  constructionMaterials: 55,
+  activeEvent: null,
+  eventLog: ['Colony Transport Arcadia-9 telemetry synchronized on seed EXP-PROXIMA-01.'],
+  activeRovers: [],
 
   setMascotMood: (mood) => set({ mascotMood: mood }),
 
@@ -434,6 +472,7 @@ export const useSettlementStore = create<SettlementState>((set) => ({
       civilizationReadiness: 12,
       powerLevel: 34,
       waterDepositsFound: 0,
+      constructionMaterials: 55,
       mascotMood: 'curious',
       mascotDialogue: "Pilot? Signal detected. You're alive… barely. Our colony ship is compromised, and this planet is uncharted. Let’s find somewhere we can survive.",
       dialogueOpen: true,
@@ -448,6 +487,252 @@ export const useSettlementStore = create<SettlementState>((set) => ({
       oxygenDraining: true,
       simulationPaused: false,
       constructedProjects: [],
-      settlementEstablished: false
+      settlementEstablished: false,
+      activeEvent: null,
+      activeRovers: []
+    }),
+
+  initSeededExpedition: (seed: string) => {
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+      hash = (hash << 5) - hash + seed.charCodeAt(i);
+      hash |= 0;
+    }
+    const h = Math.abs(hash);
+
+    const initO2 = 14 + (h % 9); // 14% - 22%
+    const initPower = 28 + ((h >> 2) % 16); // 28% - 43%
+    const initMaterials = 45 + ((h >> 4) % 35); // 45 - 79
+    const initReadiness = 10 + ((h >> 6) % 8); // 10% - 17%
+
+    set({
+      expeditionSeed: seed,
+      status: 'EMERGENCY',
+      oxygenLevel: initO2,
+      powerLevel: initPower,
+      constructionMaterials: initMaterials,
+      civilizationReadiness: initReadiness,
+      waterDepositsFound: 0,
+      mascotMood: 'curious',
+      mascotDialogue: `Expedition seed [${seed}] recalibrated! Planetary variables: O2 buffer at ${initO2}%, Auxiliary power at ${initPower}%, Salvage stockpile at ${initMaterials} units.`,
+      dialogueOpen: true,
+      shuttleDispatched: false,
+      shuttleProgress: 0,
+      resupplyCompleted: false,
+      scanActive: false,
+      discoveries: INITIAL_DISCOVERIES.map((d) => ({ ...d })),
+      wreckageInspected: false,
+      wreckageSuppliesCollected: false,
+      diagnosticStep: 0,
+      oxygenDraining: true,
+      simulationPaused: false,
+      constructedProjects: [],
+      settlementEstablished: false,
+      activeEvent: null,
+      eventLog: [`Expedition seed ${seed} synchronized. Environmental telemetry established.`],
+      activeRovers: []
+    });
+  },
+
+  triggerRandomEvent: () =>
+    set((state) => {
+      if (state.activeEvent || state.simulationPaused) return state;
+
+      const events = [
+        {
+          id: 'event-ion',
+          title: 'ION WIND SHEAR // ATMOSPHERIC SURGE',
+          description:
+            'A high-velocity methane-ion front is sweeping over Basalt Ridge toward the crash site. Surface sensors detect electromagnetic interference.',
+          hazardLevel: 'SEVERE' as const,
+          choices: [
+            {
+              label: 'Divert Power to Deflector Shielding',
+              effectText: '-12% Power Reserve // Outpost protected from ion static',
+              actionType: 'divert_shields' as const
+            },
+            {
+              label: 'Maintain Life Support Pumps',
+              effectText: '-6 Materials (damage) // Preserves 100% of atmospheric recycling',
+              actionType: 'maintain_pumps' as const
+            }
+          ]
+        },
+        {
+          id: 'event-dust',
+          title: 'BASALT DUST EDDY // THERMAL TURBULENCE',
+          description:
+            'Particulate basalt dust has choked primary radiator coils on the auxiliary generator. Solar collection efficiency is dropping.',
+          hazardLevel: 'MODERATE' as const,
+          choices: [
+            {
+              label: 'Seal Photovoltaic Arrays',
+              effectText: '-8% Power generation // Prevents internal scrubber damage',
+              actionType: 'seal_arrays' as const
+            },
+            {
+              label: 'Deploy Scavenger Drone for Metal Dust',
+              effectText: '+15 Construction Materials // -4% O2 buffer draw',
+              actionType: 'salvage_scrap' as const
+            }
+          ]
+        },
+        {
+          id: 'event-vent',
+          title: 'SUB-SURFACE GEOTHERMAL SPIKE',
+          description:
+            'A seismic fissure along Sheltered Valley has vented superheated steam and pressurized volcanic gases.',
+          hazardLevel: 'LOW' as const,
+          choices: [
+            {
+              label: 'Tap Geothermal Steam Surge',
+              effectText: '+12% Electrical Power // +8 Construction Materials',
+              actionType: 'bypass_vent' as const
+            },
+            {
+              label: 'Reinforce Canyon Palisade Bedrock',
+              effectText: '+6% Readiness // Secures foundation for Habitat Dome',
+              actionType: 'seal_fault' as const
+            }
+          ]
+        }
+      ];
+
+      const pick = events[Math.floor(Math.random() * events.length)];
+      return {
+        activeEvent: pick,
+        mascotMood: pick.hazardLevel === 'SEVERE' ? 'concerned' : 'curious',
+        mascotDialogue: `Warning, Commander! ${pick.title}. Critical environmental decision required.`,
+        dialogueOpen: true
+      };
+    }),
+
+  resolveEventChoice: (actionType: string) =>
+    set((state) => {
+      let nextPower = state.powerLevel;
+      let nextO2 = state.oxygenLevel;
+      let nextMaterials = state.constructionMaterials;
+      let nextReadiness = state.civilizationReadiness;
+      let logMsg = '';
+
+      if (actionType === 'divert_shields') {
+        nextPower = Math.max(5, nextPower - 12);
+        logMsg = 'Deflector shields engaged. Absorbed ion surge; power draw: -12%.';
+      } else if (actionType === 'maintain_pumps') {
+        nextMaterials = Math.max(0, nextMaterials - 6);
+        logMsg = 'Maintained life-support pumps. Titanium filters replaced (-6 materials).';
+      } else if (actionType === 'seal_arrays') {
+        nextPower = Math.max(5, nextPower - 8);
+        logMsg = 'Photovoltaic arrays sealed. Dust eddy passed without motor damage.';
+      } else if (actionType === 'salvage_scrap') {
+        nextMaterials = Math.min(150, nextMaterials + 15);
+        nextO2 = Math.max(6, nextO2 - 4);
+        logMsg = 'Scavenger drone recovered 15 units of basalt alloy scrap.';
+      } else if (actionType === 'bypass_vent') {
+        nextPower = Math.min(100, nextPower + 12);
+        nextMaterials = Math.min(150, nextMaterials + 8);
+        logMsg = 'Tapped geothermal fissure: +12% Power reserve, +8 Materials.';
+      } else if (actionType === 'seal_fault') {
+        nextReadiness = Math.min(100, nextReadiness + 6);
+        nextMaterials = Math.max(0, nextMaterials - 10);
+        logMsg = 'Palisade bedrock reinforced: +6% Colony Readiness.';
+      }
+
+      return {
+        powerLevel: nextPower,
+        oxygenLevel: nextO2,
+        constructionMaterials: nextMaterials,
+        civilizationReadiness: nextReadiness,
+        activeEvent: null,
+        eventLog: [logMsg, ...state.eventLog].slice(0, 8),
+        mascotMood: 'happy',
+        mascotDialogue: logMsg,
+        dialogueOpen: true
+      };
+    }),
+
+  dismissEvent: () => set({ activeEvent: null }),
+
+  dispatchRoverMission: (targetId: string) => {
+    let success = false;
+    set((state) => {
+      if (state.activeRovers.some((r) => r.targetId === targetId && r.status !== 'RETURNED')) {
+        return state;
+      }
+      if (state.powerLevel < 10 || state.constructionMaterials < 8) {
+        return {
+          mascotDialogue: 'Insufficient resources to dispatch rover expedition! Requires 10% Power and 8 Materials.',
+          dialogueOpen: true,
+          mascotMood: 'concerned'
+        };
+      }
+
+      const locName =
+        targetId === 'basalt-ridge'
+          ? 'Basalt Ridge Escarpment'
+          : targetId === 'cryo-basin'
+          ? 'Cryo Basin Glaciers'
+          : targetId === 'sheltered-valley'
+          ? 'Sheltered Valley Palisades'
+          : 'Solis Terminus Outpost';
+
+      const newRover = {
+        id: 'ROV-' + Math.floor(100 + Math.random() * 900),
+        targetId,
+        targetName: locName,
+        progress: 10,
+        status: 'TRANSIT' as const,
+        yieldSummary: 'Tracking navigation telemetry along rocky corridor...'
+      };
+
+      success = true;
+      return {
+        powerLevel: state.powerLevel - 10,
+        constructionMaterials: state.constructionMaterials - 8,
+        activeRovers: [...state.activeRovers, newRover],
+        eventLog: [`Rover probe ${newRover.id} dispatched to ${locName}.`, ...state.eventLog].slice(0, 8),
+        mascotMood: 'excited',
+        mascotDialogue: `Automated scout probe dispatched to ${locName}! Telemetry synchronized.`,
+        dialogueOpen: true
+      };
+    });
+    return success;
+  },
+
+  tickRoverProgress: () =>
+    set((state) => {
+      if (state.activeRovers.length === 0) return state;
+
+      let materialsGained = 0;
+      let readinessGained = 0;
+      const updated = state.activeRovers.map((rover) => {
+        if (rover.status === 'RETURNED') return rover;
+
+        const nextProgress = rover.progress + 25;
+        if (nextProgress >= 100) {
+          materialsGained += 14;
+          readinessGained += 4;
+          return {
+            ...rover,
+            progress: 100,
+            status: 'RETURNED' as const,
+            yieldSummary: 'Expedition complete: +14 Materials salvaged, +4% telemetry readiness.'
+          };
+        } else if (nextProgress >= 60) {
+          return {
+            ...rover,
+            progress: nextProgress,
+            status: 'SCANNING' as const,
+            yieldSummary: 'Analyzing surface mineral samples and elevation contours...'
+          };
+        }
+        return { ...rover, progress: nextProgress };
+      });
+
+      return {
+        activeRovers: updated,
+        constructionMaterials: Math.min(150, state.constructionMaterials + materialsGained),
+        civilizationReadiness: Math.min(100, state.civilizationReadiness + readinessGained)
+      };
     })
 }));
