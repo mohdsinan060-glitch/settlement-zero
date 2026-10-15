@@ -1,8 +1,8 @@
 import { useSettlementStore } from '../../store/useSettlementStore';
-import { Activity, Compass, Radio } from 'lucide-react';
+import { Activity, Compass, Radio, Zap } from 'lucide-react';
 
 export function Nav() {
-  const { status, oxygenLevel, civilizationReadiness } = useSettlementStore();
+  const { status, oxygenLevel, civilizationReadiness, powerLevel } = useSettlementStore();
 
   const getStatusBadgeClass = () => {
     switch (status) {
@@ -53,10 +53,11 @@ export function Nav() {
       {/* Center Nav Anchors */}
       <nav className="nav-links">
         <a href="#orbital">01 Orbit</a>
-        <a href="#crash-site">02 Crash</a>
-        <a href="#exploration">03 Scan</a>
-        <a href="#emergency">04 Life Support</a>
-        <a href="#command">05 Command</a>
+        <a href="#simulation">02 Sim</a>
+        <a href="#crash-site">03 Crash</a>
+        <a href="#exploration">04 Scan</a>
+        <a href="#emergency">05 Life Support</a>
+        <a href="#command">06 Command</a>
       </nav>
 
       {/* Right Telemetry indicators */}
@@ -96,6 +97,19 @@ export function Nav() {
                 {oxygenLevel}%
               </span>
             </div>
+          </div>
+        </div>
+
+        {/* Power Grid Gauge */}
+        <div className="gauge-chip">
+          <Zap size={15} color={powerLevel <= 15 ? '#ef4444' : 'var(--amber)'} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span className="mono-tag" style={{ fontSize: '9px', textTransform: 'uppercase' }}>
+              Power
+            </span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 600, color: powerLevel <= 15 ? '#ef4444' : 'var(--amber)' }}>
+              {powerLevel}%
+            </span>
           </div>
         </div>
 

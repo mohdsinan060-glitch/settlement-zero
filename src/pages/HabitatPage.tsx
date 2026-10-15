@@ -9,13 +9,14 @@ import { CrashSiteInteractive } from '../components/sections/CrashSiteInteractiv
 import { PlanetaryScan } from '../components/sections/PlanetaryScan';
 import { LifeSupportEmergency } from '../components/sections/LifeSupportEmergency';
 import { ColonyCommandCenter } from '../components/sections/ColonyCommandCenter';
-import { SimulationExpeditionDeck } from '../components/sections/SimulationExpeditionDeck';
+import { LiveSimulationDashboard } from '../components/sections/LiveSimulationDashboard';
 import { useSettlementStore } from '../store/useSettlementStore';
 import { ChevronDown, Compass, Home } from 'lucide-react';
 import { Link } from '../router';
 
 export function HabitatPage() {
-  const { oxygenLevel, activeSurvivors, civilizationReadiness } = useSettlementStore();
+  const { oxygenLevel, activeSurvivors, civilizationReadiness, simulation } = useSettlementStore();
+  const vitals = simulation.vitals;
 
   return (
     <>
@@ -112,7 +113,9 @@ export function HabitatPage() {
               <div className="chip-item">
                 <span className="chip-label">Colony Complement</span>
                 <span className="chip-val">{activeSurvivors}</span>
-                <span className="chip-sub">Cryo-survivors accounted</span>
+                <span className="chip-sub">
+                  Health: {vitals.crewHealth.toFixed(0)}% // {vitals.crewHealth > 80 ? 'Stable' : 'Distress'}
+                </span>
               </div>
 
               <div className="chip-item">
@@ -124,7 +127,7 @@ export function HabitatPage() {
                   {oxygenLevel}% O₂
                 </span>
                 <span className="chip-sub">
-                  {oxygenLevel <= 20 ? 'CRITICAL DEPLETION' : 'NOMINAL BUFFER'}
+                  Net: {simulation.oxygen.ratePerMin >= 0 ? '+' : ''}{simulation.oxygen.ratePerMin.toFixed(2)} %/min
                 </span>
               </div>
 
@@ -133,26 +136,28 @@ export function HabitatPage() {
                 <span className="chip-val" style={{ color: 'var(--amber)' }}>
                   {civilizationReadiness}%
                 </span>
-                <span className="chip-sub">Tier 1: Emergency survival</span>
+                <span className="chip-sub">
+                  {civilizationReadiness >= 70 ? 'Tier 3: Colony Self-Sufficient' : civilizationReadiness >= 40 ? 'Tier 2: Stabilizing' : 'Tier 1: Emergency survival'}
+                </span>
               </div>
 
               <div className="chip-item">
-                <span className="chip-label">Planetary Atmosphere</span>
+                <span className="chip-label">Planetary Environment</span>
                 <span className="chip-val" style={{ fontSize: '18px', paddingTop: '4px' }}>
-                  N₂ / CH₄ / CO₂
+                  Ext {vitals.surfaceTemp}°C // Hab {vitals.internalTemp}°C
                 </span>
-                <span className="chip-sub">Surface temp -32°C // 0.84G</span>
+                <span className="chip-sub">Rad {vitals.radiationAmbient} mSv/h // 0.84G</span>
               </div>
             </div>
           </div>
         </section>
 
         {/* =========================================================================
-            SIMULATION EXPEDITION DECK (Upgraded Seeded Gameplay & Events)
+            SIMULATION EXPEDITION DECK (Live Dynamic Simulation Engine)
             ========================================================================= */}
         <section id="simulation" className="sec" style={{ borderTop: '1px solid var(--line-soft)', paddingBottom: '40px' }}>
           <div className="hero-content" style={{ width: '100%', maxWidth: '980px' }}>
-            <SimulationExpeditionDeck />
+            <LiveSimulationDashboard />
           </div>
         </section>
 
